@@ -41,7 +41,6 @@ body{margin:0;font-family:Tahoma,Arial,sans-serif;background:var(--bg);color:var
 .admin-section{display:none;border-top:2px solid #eef2f8;padding-top:18px;margin-top:10px;animation:fadeTab .18s ease}
 .admin-section.active{display:block}
 @keyframes fadeTab{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.category-emoji{width:56px;height:56px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#eef4ff,#f4eefe);font-size:28px}
 .category-admin-preview{width:56px;height:56px;object-fit:cover;border-radius:12px;background:#f4f7fc}
 .subcat-box{background:#f5f8ff;border:1px solid #d8e3f8;border-radius:20px;padding:16px;margin-top:22px}
 .pass-box{background:#fff8f8;border:1px solid #f5c2c7;border-radius:20px;padding:16px;margin-top:24px}
@@ -234,7 +233,7 @@ function setSync(text, isError = false) {
 }
 
 function ensureDBStructure() {
-  if (!db.categories) db.categories = ['أدوية','عناية بطفل','عناية بالأم','تجميل','أدوات طبية'];
+  if (!db.categories) db.categories = [];
   if (!db.categoryImages) db.categoryImages = {};
   if (!db.subcategories) db.subcategories = {};
   if (!db.bankAccounts) db.bankAccounts = [];
@@ -406,7 +405,6 @@ function renderAllAdmin() {
   renderAdminCustomers();
 }
 
-// 1. الإعدادات والمظهر
 function pickBgColor(hex) { document.getElementById('adminBgColor').value = hex; }
 
 async function removeLogo() {
@@ -443,10 +441,14 @@ async function saveSettings() {
   finally { btn.disabled = false; }
 }
 
-// 2. المنتجات
 function populateProductCategories(selectedCat, selectedSub) {
   const sel = document.getElementById('pCategory');
   if (!sel) return;
+  if (!db.categories.length) {
+    sel.innerHTML = '<option value="">-- أضف قسم رئيسي أولاً --</option>';
+    populateProductSubcategories();
+    return;
+  }
   sel.innerHTML = db.categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   if (selectedCat && db.categories.includes(selectedCat)) sel.value = selectedCat;
   populateProductSubcategories(selectedSub);
@@ -471,6 +473,7 @@ async function saveProduct() {
     const subcategory = document.getElementById('pSubcategory').value || '';
     const price = document.getElementById('pPrice').value;
     if (!name || price === '') return alert('أدخل اسم المنتج والسعر');
+    if (!category) return alert('أضف قسم رئيسي من تبويب الأقسام أولاً');
 
     btn.disabled = true; btn.textContent = 'جاري الحفظ...';
     let image = await uploadImageToBlob(document.getElementById('pImageFile'), 640);
@@ -534,7 +537,6 @@ function renderAdminProducts() {
   });
 }
 
-// 3. الأقسام الرئيسية والفرعية
 async function addCategory() {
   const c = document.getElementById('catNew').value.trim();
   if (!c) return alert('أدخل اسم القسم');
@@ -609,7 +611,7 @@ async function deleteCategory(c) {
 
 function renderAdminCategories() {
   const box = document.getElementById('adminCategories');
-  box.innerHTML = '';
+  box.innerHTML = db.categories.length ? '' : '<p style="color:#666">لا توجد أقسام رئيسية حالياً.</p>';
   db.categories.forEach(c => {
     const row = document.createElement('div'); row.className = 'adminrow';
     const subCount = (db.subcategories[c] || []).length;
@@ -625,6 +627,10 @@ function populateSubcatParentSelect(selected) {
   const sel = document.getElementById('subcatParentSelect');
   if (!sel) return;
   const prev = selected || sel.value;
+  if (!db.categories.length) {
+    sel.innerHTML = '<option value="">-- أضف قسم رئيسي أولاً --</option>';
+    return;
+  }
   sel.innerHTML = db.categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   if (prev && db.categories.includes(prev)) sel.value = prev;
 }
@@ -655,6 +661,7 @@ function renderAdminSubcategories() {
   const parent = document.getElementById('subcatParentSelect').value;
   const box = document.getElementById('adminSubcategories');
   box.innerHTML = '';
+  if (!parent) return;
   const list = db.subcategories[parent] || [];
   if (!list.length) { box.innerHTML = `<p style="color:#666">لا توجد أقسام فرعية داخل "${esc(parent)}" بعد.</p>`; return; }
   list.forEach((s, idx) => {
@@ -692,7 +699,6 @@ async function deleteSubcategory(parent, idx) {
   renderAllAdmin();
 }
 
-// 4. الإعلانات
 async function addBanner() {
   if (db.banners.length >= 4) return alert('الحد الأقصى 4 إعلانات');
   const btn = document.getElementById('addBannerBtn');
@@ -728,7 +734,6 @@ function renderAdminBanners() {
   });
 }
 
-// 5. الحسابات البنكية
 async function addBankAccount() {
   const bank = document.getElementById('bankName').value.trim();
   const holder = document.getElementById('bankAccountName').value.trim();
@@ -764,7 +769,6 @@ function renderAdminBanks() {
   });
 }
 
-// 6. الطلبات والعملاء وكلمة المرور
 function renderAdminOrders() {
   const box = document.getElementById('adminOrders');
   box.innerHTML = db.orders.length ? '' : '<p style="color:#666">لا توجد طلبات.</p>';
