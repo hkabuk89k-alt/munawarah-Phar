@@ -186,10 +186,9 @@ body{margin:0;font-family:Tahoma,Arial,sans-serif;background:var(--bg);color:var
 </nav>
 
 <script>
-const defaultCategories = ['أدوية','عناية بطفل','عناية بالأم','تجميل','أدوات طبية'];
 const statuses = ['تم الطلب','مراجعة','تم التنفيذ','تم إرسال الطلب','تم الاستلام'];
 let db = {
-  categories: [...defaultCategories],
+  categories: [],
   categoryImages: {},
   subcategories: {},
   bankAccounts: [],
@@ -206,18 +205,6 @@ let db = {
     phone: '778358110'
   }
 };
-
-function categoryArt(name) {
-  const shapes = {
-    'أدوية':'<rect x="28" y="28" width="64" height="24" rx="12" fill="#e85d75" transform="rotate(-35 60 40)"/><path d="M50 26l22 30" stroke="#fff" stroke-width="5" transform="rotate(-35 60 40)"/>',
-    'عناية بطفل':'<circle cx="60" cy="43" r="25" fill="#ffd7b5"/><path d="M35 40Q35 10 60 15Q85 10 85 40" fill="#7c5a43"/><circle cx="51" cy="44" r="3"/><circle cx="69" cy="44" r="3"/><path d="M52 55q8 7 16 0" fill="none" stroke="#d77" stroke-width="3"/>',
-    'عناية بالأم':'<circle cx="60" cy="34" r="19" fill="#ffd7b5"/><path d="M40 34Q38 10 60 12Q82 10 80 34" fill="#6b4b3e"/><path d="M28 92Q30 55 60 53Q90 55 92 92" fill="#e99bb7"/>',
-    'تجميل':'<rect x="48" y="22" width="24" height="52" rx="5" fill="#e85d8a"/><rect x="52" y="12" width="16" height="15" rx="3" fill="#b33b67"/><rect x="42" y="73" width="36" height="12" rx="4" fill="#d9a4b7"/>',
-    'أدوات طبية':'<path d="M50 18h20v27h27v20H70v27H50V65H23V45H50z" fill="#fff" stroke="#4c9ed9" stroke-width="3"/>'
-  };
-  let bg = {'أدوية':'#fff0f2','عناية بطفل':'#fff4df','عناية بالأم':'#fceaf3','تجميل':'#fbeaf1','أدوات طبية':'#eaf5ff'}[name] || '#eff7f1';
-  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="110" viewBox="0 0 120 110"><rect width="120" height="110" rx="16" fill="${bg}"/>${shapes[name] || '<circle cx="60" cy="55" r="28" fill="#5ca675"/>'}</svg>`);
-}
 
 let user = JSON.parse(localStorage.getItem('manoraUser') || 'null');
 let cart = JSON.parse(localStorage.getItem('manoraCart') || '[]');
@@ -299,14 +286,12 @@ async function loadCloudDB(notify = false) {
       db = {
         ...db,
         ...data,
+        categories: data.categories || [],
+        categoryImages: data.categoryImages || {},
         subcategories: data.subcategories || {},
         bankAccounts: data.bankAccounts || [],
         settings: { ...db.settings, ...(data.settings || {}) }
       };
-      defaultCategories.forEach(c => {
-        if (!db.categories.includes(c)) db.categories.push(c);
-        if (!db.categoryImages[c]) db.categoryImages[c] = categoryArt(c);
-      });
       if (user && !db.customers.some(c => c.username === user.username)) {
         user = null;
         localStorage.removeItem('manoraUser');
@@ -486,7 +471,7 @@ function renderContent() {
       rowCats.forEach((cat, offset) => {
         const realIdx = i + offset;
         const isExpanded = (expandedMainCat === cat);
-        const img = db.categoryImages[cat] || categoryArt(cat);
+        const img = db.categoryImages[cat];
         html += `<div class="main-cat-card ${isExpanded ? 'expanded' : ''}" onclick="onMainCategoryClick(${realIdx})">
           <div class="main-cat-media"><img src="${imageSrc(img)}" alt="${esc(cat)}"></div>
           <div class="main-cat-footer"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg><span>${esc(cat)}</span></div>
