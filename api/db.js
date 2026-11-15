@@ -3,7 +3,7 @@ const { put, list, del } = require('@vercel/blob');
 const DB_FILE = 'manora-db.json';
 const DEFAULT_DB = {
   adminPassword: '789686358',
-  categories: ['أدوية', 'عناية بطفل', 'عناية بالأم', 'تجميل', 'أدوات طبية'],
+  categories: [],
   categoryImages: {},
   subcategories: {},
   bankAccounts: [],
@@ -67,7 +67,6 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
       const { action, payload } = req.body;
 
-      // رفع صورة (للمنتجات أو الأقسام أو سندات الإيداع)
       if (action === 'uploadImage') {
         const { base64, filename } = payload;
         const matches = base64.match(/^data:(.+);base64,(.+)$/);
@@ -81,7 +80,6 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ url: blob.url });
       }
 
-      // حفظ التعديلات من لوحة التحكم
       if (action === 'saveAdminDB') {
         const currentDb = await getDatabase();
         if (payload.authPassword !== currentDb.adminPassword) {
@@ -96,7 +94,6 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
-      // تنظيف الصور غير المستخدمة من مجلد images/
       if (action === 'cleanupBlobs') {
         const currentDb = await getDatabase();
         if (payload.authPassword !== currentDb.adminPassword) {
@@ -111,7 +108,6 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ success: true, deletedCount: unusedUrls.length });
       }
 
-      // تسجيل حساب عميل جديد وحفظه في السحابة
       if (action === 'signup') {
         const db = await getDatabase();
         if (db.customers.some(c => c.username.toLowerCase() === payload.username.toLowerCase())) {
@@ -127,7 +123,6 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ success: true, customer: safeCustomer });
       }
 
-      // تسجيل دخول العميل من أي جهاز
       if (action === 'login') {
         const db = await getDatabase();
         const customer = db.customers.find(
@@ -140,7 +135,6 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ success: true, customer: safeCustomer });
       }
 
-      // إرسال طلب جديد مع صورة السند
       if (action === 'newOrder') {
         const db = await getDatabase();
         db.orders.push(payload);
