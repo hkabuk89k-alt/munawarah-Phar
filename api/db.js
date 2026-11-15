@@ -1,0 +1,161 @@
+const { put, list, del } = require('@vercel/blob');
+
+const DB_FILE = 'manora-db.json';
+const DEFAULT_DB = {
+  adminPassword: '789686358',
+  categories: ['أدوية', 'عناية بطفل', 'عناية بالأم', 'تجميل', 'أدوات طبية'],
+  categoryImages: {},
+  subcategories: {},
+  bankAccounts: [],
+  products: [],
+  banners: [],
+  settings: {
+    brand: 'صيدلية المنورة',
+    subBrand: 'صيدليه المنورة للادوية و المستلزمات الطبيه',
+    logo: '',
+    bgColor: '#f3f7fb',
+    address: 'المكلا - الديس - خلف ملعب بارادم',
+    phone: '778358110'
+  },
+  customers: [],
+  orders: []
+};
+
+async function getDatabase() {
+  const { blobs } = await list({ prefix: DB_FILE });
+  if (blobs.length === 0) {
+    return { ...DEFAULT_DB };
+  }
+  const latestBlob = blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0];
+  const response = await fetch(`${latestBlob.url}?t=${Date.now()}`, { cache: 'no-store' });
+  if (!response.ok) return { ...DEFAULT_DB };
+  const data = await response.json();
+  return { ...DEFAULT_DB, ...data };
+}
+
+function getUsedImageUrls(db) {
+  const used = new Set();
+  if (db.settings && db.settings.logo) used.add(db.settings.logo);
+  (db.products || []).forEach(p => { if (p.image) used.add(p.image); });
+  Object.values(db.categoryImages || {}).forEach(url => { if (url) used.add(url); });
+  Object.values(db.subcategories || {}).forEach(list => {
+    (list || []).forEach(s => { if (s.image) used.add(s.image); });
+  });
+  (db.banners || []).forEach(b => { if (b.image) used.add(b.image); });
+  (db.orders || []).forEach(o => { if (o.deposit) used.add(o.deposit); });
+  return used;
+}
+
+module.exports = async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    if (req.method === 'GET') {
+      const db = await getDatabase();
+      const isAdmin = req.query.admin === '1';
+      if (!isAdmin) {
+        const { adminPassword, ...publicDb } = db;
+        publicDb.customers = (publicDb.customers || []).map(({ password, ...c }) => c);
+        return res.status(200).json(publicDb);
+      }
+      return res.status(200).json(db);
+    }
+
+    if (req.method === 'POST') {
+      const { action, payload } = req.body;
+
+      // رفع صورة (للمنتجات أو الأقسام أو سندات الإيداع)
+      if (action === 'uploadImage') {
+        const { base64, filename } = payload;
+        const matches = base64.match(/^data:(.+);base64,(.+)$/);
+        if (!matches) return res.status(400).json({ error: 'صيغة الصورة غير صالحة' });
+        const contentType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        const blob = await put(`images/${Date.now()}-${filename || 'img.png'}`, buffer, {
+          access: 'public',
+          contentType
+        });
+        return res.status(200).json({ url: blob.url });
+      }
+
+      // حفظ التعديلات من لوحة التحكم
+      if (action === 'saveAdminDB') {
+        const currentDb = await getDatabase();
+        if (payload.authPassword !== currentDb.adminPassword) {
+          return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+        }
+        const { authPassword, ...newDbData } = payload;
+        await put(DB_FILE, JSON.stringify(newDbData), {
+          access: 'public',
+          addRandomSuffix: false,
+          contentType: 'application/json'
+        });
+        return res.status(200).json({ success: true });
+      }
+
+      // تنظيف الصور غير المستخدمة من مجلد images/
+      if (action === 'cleanupBlobs') {
+        const currentDb = await getDatabase();
+        if (payload.authPassword !== currentDb.adminPassword) {
+          return res.status(401).json({ error: 'غير مصرح' });
+        }
+        const usedUrls = getUsedImageUrls(currentDb);
+        const { blobs } = await list({ prefix: 'images/' });
+        const unusedUrls = blobs.filter(b => !usedUrls.has(b.url)).map(b => b.url);
+        if (unusedUrls.length > 0) {
+          await del(unusedUrls);
+        }
+        return res.status(200).json({ success: true, deletedCount: unusedUrls.length });
+      }
+
+      // تسجيل حساب عميل جديد وحفظه في السحابة
+      if (action === 'signup') {
+        const db = await getDatabase();
+        if (db.customers.some(c => c.username.toLowerCase() === payload.username.toLowerCase())) {
+          return res.status(400).json({ error: 'اسم المستخدم مستخدم مسبقاً' });
+        }
+        db.customers.push(payload);
+        await put(DB_FILE, JSON.stringify(db), {
+          access: 'public',
+          addRandomSuffix: false,
+          contentType: 'application/json'
+        });
+        const { password, ...safeCustomer } = payload;
+        return res.status(200).json({ success: true, customer: safeCustomer });
+      }
+
+      // تسجيل دخول العميل من أي جهاز
+      if (action === 'login') {
+        const db = await getDatabase();
+        const customer = db.customers.find(
+          c => c.username.toLowerCase() === payload.username.toLowerCase() && c.password === payload.password
+        );
+        if (!customer) {
+          return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة (أو تم حذف الحساب)' });
+        }
+        const { password, ...safeCustomer } = customer;
+        return res.status(200).json({ success: true, customer: safeCustomer });
+      }
+
+      // إرسال طلب جديد مع صورة السند
+      if (action === 'newOrder') {
+        const db = await getDatabase();
+        db.orders.push(payload);
+        await put(DB_FILE, JSON.stringify(db), {
+          access: 'public',
+          addRandomSuffix: false,
+          contentType: 'application/json'
+        });
+        return res.status(200).json({ success: true });
+      }
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message || 'حدث خطأ في السيرفر' });
+  }
+};
